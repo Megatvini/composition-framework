@@ -583,44 +583,51 @@ std::set<Manifest *> ProtectionGraph::ilpConflictHandling(llvm::Module &M,
   auto costFunction = [](ManifestStats s) -> double {
     return 1.0 * s.normalizedHotness + (1.0 - s.normalizedHotnessProtectee);
   };
-  
-  ILPSolver solver{};
-  solver.init(ILPObjective, ILPOverheadBound, ILPExplicitBound, ILPImplicitBound, 0, 0);
-  solver.setCostFunction(costFunction);
-  solver.addManifests(MANIFESTS, mStats);
-  solver.addDependencies(dependencies);
-  solver.addConflicts(conflicts);
-  solver.addCycles(cycles);
-  solver.addConnectivity(connectivities);
-  solver.addBlockConnectivity(blockConnectivities);
-  solver.addExplicitCoverages(exactCoverage);
-  //solver.addImplicitCoverage(implicitCov, duplicateEdgesOnManifest);
-  solver.addNewImplicitCoverage(exactCoverage, implicitManifestEdges);
-  solver.addNOfDependencies(nOfs);
+  do {
+    ILPSolver solver{};
+    solver.init(ILPObjective, ILPOverheadBound, ILPExplicitBound, ILPImplicitBound, 0, 0);
+    solver.setCostFunction(costFunction);
+    solver.addManifests(MANIFESTS, mStats);
+    solver.addDependencies(dependencies);
+    solver.addConflicts(conflicts);
+    solver.addCycles(cycles);
+    solver.addConnectivity(connectivities);
+    solver.addBlockConnectivity(blockConnectivities);
+    solver.addExplicitCoverages(exactCoverage);
+    //solver.addImplicitCoverage(implicitCov, duplicateEdgesOnManifest);
+    solver.addNewImplicitCoverage(exactCoverage, implicitManifestEdges);
+    solver.addNOfDependencies(nOfs);
 
-  // Must come after explicit coverage is set
-  solver.addUndoDependencies(MANIFESTS);
-  auto[acceptedIndices, acceptedEdges] = solver.run();
-  solver.destroy();
+    // Must come after explicit coverage is set
+    solver.addUndoDependencies(MANIFESTS);
+    auto[acceptedIndices, acceptedEdges] = solver.run();
+    solver.destroy();
 
-  std::set<Manifest *> accepted{};
-  for (auto &mIdx : acceptedIndices) {
-    accepted.insert(MANIFESTS.at(mIdx));
-  }
-  //for (auto &eIdx : acceptedEdges) {
-  //// TODO: calculate implicit coverage based on the accepted edges
-  //llvm::dbgs() << "accepted edge" << eIdx << "\n";
-  //}
+    std::set<Manifest *> accepted{};
+    for (auto &mIdx : acceptedIndices) {
+      accepted.insert(MANIFESTS.at(mIdx));
+    }
+    //for (auto &eIdx : acceptedEdges) {
+    //// TODO: calculate implicit coverage based on the accepted edges
+    //llvm::dbgs() << "accepted edge" << eIdx << "\n";
+    //}
 
-  ProtectionGraph pg{};
-  pg.addManifests(accepted);
-  pg.addHierarchy(M);
-  pg.connectShadowNodes();
-  auto newCycles = pg.computeCycles();
-  cStats.cycles = cycles.size();
-  cStats.conflicts = conflicts.size();
-  cStats.timeConflictResolving += resolvingProfiler.stop();
-  return accepted;
+    ProtectionGraph pg{};
+    pg.addManifests(accepted);
+    pg.addHierarchy(M);
+    pg.connectShadowNodes();
+    auto newCycles = pg.computeCycles();
+    if (!newCycles.empty()) {
+//       for (auto &c : newCycles) {
+//         cycles.insert(c);
+//       }
+    } else {
+      cStats.cycles = cycles.size();
+      cStats.conflicts = conflicts.size();
+      cStats.timeConflictResolving += resolvingProfiler.stop();
+      return accepted;
+    }
+  } while (true);
 }
 
 std::vector<Manifest *> ProtectionGraph::topologicalSortManifests(const std::set<Manifest *> &manifests) {
